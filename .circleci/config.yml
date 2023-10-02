@@ -45,20 +45,38 @@ workflows:
               only: /^v.*/
           requires:
             - pause_workflow
+      - deploy-infrastructure:
+          requires: [test-frontend, test-backend, scan-frontend, scan-backend]
+          filters:
+            branches:
+              only: [main]
+
 
 
 commands:
   destroy-environment:
     description: Destroy back-end and front-end cloudformation stacks given a workflow ID.
     parameters:
-      # Add parameter here   
+      workflowID: 
+        type: string   
     steps:
       - run:
           name: Destroy environments
           when: on_fail
-          command: |
-            # Your code here
+          command: echo "WorkflowID=${CIRCLE_WORKFLOW_ID:0:7}"
+      - run: 
+          name: Destroy backend 
+          when: on_fail 
+          command: 
+            ws s3 rm s3://udapeople-<< parameters.workflowID >> --recursive
+            aws s3 rb s3://udapeople-<< parameters.workflowID >> --force
+            aws cloudformation delete-stack --stack-name udapeople-backend-<< parameters.workflowID >>
             exit 1
+      - run:
+          name: Destroy frontend stack
+          when: on_fail
+          command: |
+            aws cloudformation delete-stack --stack-name udapeople-frontend-<< parameters.workflowID >>
 
   revert-migrations:
     description: Revert the last migration if successfully run in the current workflow.
@@ -79,12 +97,12 @@ commands:
               exit 1
             fi
             
-jobs:
+job:
   build-frontend:
     docker:
       - image: circleci/node:13.8.0
     steps:
-      - checkout
+      - checkout:
       - restore_cache:
           keys: [frontend-build]
       - run:
@@ -100,7 +118,7 @@ jobs:
     docker:
       - image: circleci/node:13.8.0
     steps:
-      - checkout
+      - checkout:
       - restore_cache:
           keys: [backend-build]
       - run:
@@ -116,13 +134,13 @@ jobs:
     docker:
       - image: circleci/node:13.8.0
     steps:
-      - checkout 
+      - checkout: 
       - restore_cache:
         key: frontend-build 
       
-      -run: 
+      - run: 
           name: test frontend 
-          command: |
+          command: | 
           cd frontend 
           npm run test
                 
@@ -169,17 +187,20 @@ jobs:
 
   deploy-infrastructure:
     docker:
-      # Docker image here that supports AWS CLI
+      - image: amazon/aws-cli
     steps:
-      # Checkout code from git
+      - checkout
+      - run:
+          name: Install tar and zip utilities 
+          command: yum -y install tar gzip
       - run:
           name: Ensure back-end infrastructure exists
           command: |
             aws cloudformation deploy \
               --template-file .circleci/files/backend.yml \
-              #--tags project=your-tag \
-              # --stack-name "your back-end stack name with workflow id" \
-              # --parameter-overrides ID="your workflow id"  
+              --tags project=your-tag \
+              --stack-name "your back-end stack name with workflow id" \
+              --parameter-overrides ID="your workflow id"  
               exit 1
       - run:
           name: Ensure front-end infrastructure exist
